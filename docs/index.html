@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>space station lofi</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="stars"></div>
+  <div class="stars2"></div>
+  <div class="stars3"></div>
+
+  <div class="space-station">
+    <div class="viewport">
+      <div class="viewport-frame"></div>
+      <div class="earth"></div>
+      <div class="aurora"></div>
+      <div class="satellite"></div>
+    </div>
+
+    <div class="control-panel">
+      <div class="panel-row">
+        <div class="indicator active"></div>
+        <div class="indicator"></div>
+        <div class="indicator active"></div>
+        <div class="indicator"></div>
+      </div>
+      <div class="display">
+        <div class="waveform">
+          <svg viewBox="0 0 100 30" preserveAspectRatio="none">
+            <path class="wave-path" d="M0,15 Q10,5 20,15 T40,15 T60,15 T80,15 T100,15" />
+          </svg>
+        </div>
+        <div class="display-text">AUDIO LINK</div>
+      </div>
+      <div class="panel-row">
+        <div class="button"></div>
+        <div class="slider">
+          <div class="slider-fill"></div>
+        </div>
+        <div class="button active"></div>
+      </div>
+    </div>
+
+    <div class="station-arm"></div>
+    <div class="solar-panel left">
+      <div class="panel-segment"></div>
+      <div class="panel-segment"></div>
+      <div class="panel-segment"></div>
+    </div>
+    <div class="solar-panel right">
+      <div class="panel-segment"></div>
+      <div class="panel-segment"></div>
+      <div class="panel-segment"></div>
+    </div>
+  </div>
+
+  <div class="info">
+    <div class="title">orbital lofi beats</div>
+    <div class="equalizer">
+      <span></span><span></span><span></span><span></span><span></span>
+    </div>
+  </div>
+
+  <script>
+    // Web Audio API - Space Ambient Lofi
+    let audioStarted = false;
+
+    function startAudio() {
+      if (audioStarted) return;
+      audioStarted = true;
+
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const masterGain = ctx.createGain();
+      masterGain.gain.value = 0.25;
+      masterGain.connect(ctx.destination);
+
+      // Deep space ambient drone
+      function createDrone(freq, detune = 0) {
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        osc.detune.value = detune;
+
+        const gain = ctx.createGain();
+        gain.gain.value = 0.08;
+
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = 400;
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(masterGain);
+        osc.start();
+
+        // Slow LFO modulation
+        const lfo = ctx.createOscillator();
+        lfo.type = 'sine';
+        lfo.frequency.value = 0.05 + Math.random() * 0.05;
+        const lfoGain = ctx.createGain();
+        lfoGain.gain.value = 0.03;
+        lfo.connect(lfoGain);
+        lfoGain.connect(gain.gain);
+        lfo.start();
+      }
+
+      // Create layered space drones
+      createDrone(55);      // Sub bass
+      createDrone(110, 5);  // Bass
+      createDrone(165, -3); // Fifth
+      createDrone(220, 7);  // Octave
+
+      // Ethereal pad - space chord progression
+      const chords = [
+        [130.81, 164.81, 196.00, 261.63], // C maj7
+        [146.83, 185.00, 220.00, 293.66], // D min7
+        [164.81, 196.00, 246.94, 329.63], // E min7
+        [174.61, 220.00, 261.63, 349.23], // F maj7
+      ];
+
+      function playSpacePad(freqs, startTime, duration) {
+        freqs.forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          osc.type = 'sine';
+          osc.frequency.value = freq;
+
+          const osc2 = ctx.createOscillator();
+          osc2.type = 'sine';
+          osc2.frequency.value = freq * 1.002; // Slight detune for shimmer
+
+          const gain = ctx.createGain();
+          const filter = ctx.createBiquadFilter();
+          filter.type = 'lowpass';
+          filter.frequency.value = 800;
+          filter.Q.value = 1;
+
+          osc.connect(filter);
+          osc2.connect(filter);
+          filter.connect(gain);
+          gain.connect(masterGain);
+
+          // Very slow attack and release
+          gain.gain.setValueAtTime(0, startTime);
+          gain.gain.linearRampToValueAtTime(0.04, startTime + 2);
+          gain.gain.setValueAtTime(0.04, startTime + duration - 2);
+          gain.gain.linearRampToValueAtTime(0, startTime + duration);
+
+          osc.start(startTime);
+          osc.stop(startTime + duration);
+          osc2.start(startTime);
+          osc2.stop(startTime + duration);
+        });
+      }
+
+      function scheduleChords() {
+        const now = ctx.currentTime;
+        const chordDuration = 8;
+        chords.forEach((chord, i) => {
+          playSpacePad(chord, now + i * chordDuration, chordDuration + 0.5);
+        });
+        setTimeout(scheduleChords, chords.length * chordDuration * 1000);
+      }
+      scheduleChords();
+
+      // Gentle bell-like tones (satellite pings)
+      function playPing() {
+        if (Math.random() > 0.4) {
+          setTimeout(playPing, 4000 + Math.random() * 6000);
+          return;
+        }
+
+        const freq = [523.25, 659.25, 783.99, 1046.5][Math.floor(Math.random() * 4)];
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(masterGain);
+
+        const now = ctx.currentTime;
+        gain.gain.setValueAtTime(0.06, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 3);
+
+        osc.start(now);
+        osc.stop(now + 3);
+
+        setTimeout(playPing, 4000 + Math.random() * 6000);
+      }
+      setTimeout(playPing, 2000);
+
+      // White noise for space static (very subtle)
+      const noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);
+      const noiseData = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < noiseBuffer.length; i++) {
+        noiseData[i] = (Math.random() * 2 - 1) * 0.02;
+      }
+      const noise = ctx.createBufferSource();
+      noise.buffer = noiseBuffer;
+      noise.loop = true;
+      const noiseGain = ctx.createGain();
+      noiseGain.gain.value = 0.15;
+      const noiseFilter = ctx.createBiquadFilter();
+      noiseFilter.type = 'bandpass';
+      noiseFilter.frequency.value = 2000;
+      noiseFilter.Q.value = 0.5;
+      noise.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(masterGain);
+      noise.start();
+
+      // Occasional low frequency rumble (station vibration)
+      function playRumble() {
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.value = 30 + Math.random() * 20;
+
+        const gain = ctx.createGain();
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = 80;
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(masterGain);
+
+        const now = ctx.currentTime;
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(0.08, now + 0.5);
+        gain.gain.linearRampToValueAtTime(0, now + 2);
+
+        osc.start(now);
+        osc.stop(now + 2);
+
+        setTimeout(playRumble, 8000 + Math.random() * 12000);
+      }
+      setTimeout(playRumble, 5000);
+
+      console.log('Space station lofi audio started');
+    }
+
+    // Auto-start for streaming
+    document.addEventListener('click', startAudio, { once: true });
+    document.addEventListener('keydown', startAudio, { once: true });
+
+    setTimeout(() => {
+      startAudio();
+    }, 1000);
+  </script>
+</body>
+</html>

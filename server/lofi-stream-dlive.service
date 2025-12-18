@@ -1,0 +1,17 @@
+[Unit]
+Description=Lofi Stream to DLive (Space Station Theme)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/lofi-stream-dlive/server
+Environment=DLIVE_KEY=YOUR_STREAM_KEY_HERE
+ExecStart=/opt/lofi-stream-dlive/server/stream.sh
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
