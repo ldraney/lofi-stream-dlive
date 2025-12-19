@@ -21,15 +21,13 @@ fi
 
 echo "=== Starting Lofi Stream to DLive ==="
 echo "Resolution: $RESOLUTION @ ${FPS}fps"
-echo "Sink: $SINK_NAME"
 
-# Cleanup any existing processes
+# Cleanup any existing processes (but not PulseAudio)
 cleanup() {
     echo "Cleaning up..."
     pkill -f "Xvfb :$DISPLAY_NUM" 2>/dev/null || true
     pkill -f "chromium.*lofi-stream-dlive" 2>/dev/null || true
     pkill -f "ffmpeg.*dlive" 2>/dev/null || true
-    pulseaudio --kill 2>/dev/null || true
 }
 
 trap cleanup EXIT
@@ -42,44 +40,43 @@ Xvfb :$DISPLAY_NUM -screen 0 ${RESOLUTION}x24 &
 sleep 3
 export DISPLAY=:$DISPLAY_NUM
 
-# PulseAudio setup - simplified for single server
+# PulseAudio setup
 echo "=== Setting up PulseAudio ==="
-export XDG_RUNTIME_DIR=/run/user/0
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
 mkdir -p $XDG_RUNTIME_DIR
 chmod 700 $XDG_RUNTIME_DIR
 
-# Kill any existing pulseaudio and start fresh
-pulseaudio --kill 2>/dev/null || true
-sleep 1
-
-# Start PulseAudio in background with autospawn disabled
-pulseaudio --start --exit-idle-time=-1 --daemonize=yes 2>/dev/null || true
-sleep 2
+# Start PulseAudio if not running
+if ! pulseaudio --check 2>/dev/null; then
+    echo "Starting PulseAudio..."
+    pulseaudio --start --exit-idle-time=-1
+    sleep 3
+fi
 
 # Wait for PulseAudio to be ready
 echo "Waiting for PulseAudio..."
-for i in {1..10}; do
+for i in {1..15}; do
     if pactl info >/dev/null 2>&1; then
         echo "PulseAudio is ready"
         break
     fi
+    echo "  waiting... ($i)"
     sleep 1
 done
 
-# Create virtual audio sink
-echo "Creating audio sink: $SINK_NAME"
-pactl load-module module-null-sink sink_name=$SINK_NAME sink_properties=device.description=VirtualSpeaker 2>/dev/null || true
-sleep 1
-
-# Verify sink was created
-if pactl list sinks short | grep -q "$SINK_NAME"; then
-    echo "Audio sink created successfully"
-else
-    echo "Warning: Could not verify sink creation, continuing anyway..."
+# Create virtual audio sink if it doesn't exist
+if ! pactl list sinks short 2>/dev/null | grep -q "$SINK_NAME"; then
+    echo "Creating audio sink: $SINK_NAME"
+    pactl load-module module-null-sink sink_name=$SINK_NAME sink_properties=device.description=VirtualSpeaker || true
+    sleep 1
 fi
 
 # Set as default sink
 pactl set-default-sink $SINK_NAME 2>/dev/null || true
+
+# Show current audio setup
+echo "Audio sinks:"
+pactl list sinks short 2>/dev/null || echo "  (could not list sinks)"
 
 # Start Chromium
 echo "=== Starting Chromium ==="
@@ -109,16 +106,11 @@ sleep 1
 xdotool mousemove 640 360 click 1
 sleep 3
 
-# Route any Chromium audio to our sink
-echo "Routing audio..."
+# Route any audio to our sink
+echo "Routing audio to $SINK_NAME..."
 for input in $(pactl list sink-inputs short 2>/dev/null | cut -f1); do
-    pactl move-sink-input "$input" "$SINK_NAME" 2>/dev/null || true
+    pactl move-sink-input "$input" "$SINK_NAME" 2>/dev/null && echo "  routed input $input" || true
 done
-
-# Verify we have the monitor source
-echo "=== Verifying audio setup ==="
-pactl list sources short
-echo ""
 
 # Start FFmpeg streaming to DLive
 echo "=== Starting FFmpeg stream to DLive ==="
