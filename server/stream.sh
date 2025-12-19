@@ -22,12 +22,13 @@ fi
 echo "=== Starting Lofi Stream to DLive ==="
 echo "Resolution: $RESOLUTION @ ${FPS}fps"
 
-# Cleanup any existing processes (but not PulseAudio)
+# Cleanup any existing processes
 cleanup() {
     echo "Cleaning up..."
     pkill -f "Xvfb :$DISPLAY_NUM" 2>/dev/null || true
     pkill -f "chromium.*lofi-stream-dlive" 2>/dev/null || true
     pkill -f "ffmpeg.*dlive" 2>/dev/null || true
+    pkill -f "pulseaudio" 2>/dev/null || true
 }
 
 trap cleanup EXIT
@@ -40,47 +41,42 @@ Xvfb :$DISPLAY_NUM -screen 0 ${RESOLUTION}x24 &
 sleep 3
 export DISPLAY=:$DISPLAY_NUM
 
-# PulseAudio setup
-echo "=== Setting up PulseAudio ==="
-export XDG_RUNTIME_DIR=/run/user/$(id -u)
-mkdir -p $XDG_RUNTIME_DIR
-chmod 700 $XDG_RUNTIME_DIR
+# PulseAudio setup - use system mode since we're root
+echo "=== Setting up PulseAudio (system mode) ==="
 
-# Start PulseAudio if not running
-if ! pulseaudio --check 2>/dev/null; then
-    echo "Starting PulseAudio..."
-    pulseaudio --start --exit-idle-time=-1
-    sleep 3
-fi
+# Create required directories
+mkdir -p /var/run/pulse
+chmod 755 /var/run/pulse
 
-# Wait for PulseAudio to be ready
-echo "Waiting for PulseAudio..."
-for i in {1..15}; do
-    if pactl info >/dev/null 2>&1; then
-        echo "PulseAudio is ready"
+# Create system-wide PulseAudio config
+cat > /etc/pulse/system.pa << 'PACONF'
+load-module module-native-protocol-unix auth-anonymous=1
+load-module module-null-sink sink_name=virtual_speaker sink_properties=device.description=VirtualSpeaker
+set-default-sink virtual_speaker
+PACONF
+
+# Start PulseAudio in system mode
+pulseaudio --system --disallow-exit --disallow-module-loading=0 &
+sleep 3
+
+# Verify PulseAudio is running
+echo "Checking PulseAudio..."
+for i in {1..10}; do
+    if PULSE_SERVER=unix:/var/run/pulse/native pactl info >/dev/null 2>&1; then
+        echo "PulseAudio system daemon is ready"
         break
     fi
     echo "  waiting... ($i)"
     sleep 1
 done
 
-# Create virtual audio sink if it doesn't exist
-if ! pactl list sinks short 2>/dev/null | grep -q "$SINK_NAME"; then
-    echo "Creating audio sink: $SINK_NAME"
-    pactl load-module module-null-sink sink_name=$SINK_NAME sink_properties=device.description=VirtualSpeaker || true
-    sleep 1
-fi
+# Show sinks
+echo "Available sinks:"
+PULSE_SERVER=unix:/var/run/pulse/native pactl list sinks short || echo "  (none listed)"
 
-# Set as default sink
-pactl set-default-sink $SINK_NAME 2>/dev/null || true
-
-# Show current audio setup
-echo "Audio sinks:"
-pactl list sinks short 2>/dev/null || echo "  (could not list sinks)"
-
-# Start Chromium
+# Start Chromium with system PulseAudio
 echo "=== Starting Chromium ==="
-PULSE_SINK=$SINK_NAME chromium-browser \
+PULSE_SERVER=unix:/var/run/pulse/native chromium-browser \
     --no-sandbox \
     --disable-gpu \
     --disable-software-rasterizer \
@@ -108,13 +104,13 @@ sleep 3
 
 # Route any audio to our sink
 echo "Routing audio to $SINK_NAME..."
-for input in $(pactl list sink-inputs short 2>/dev/null | cut -f1); do
-    pactl move-sink-input "$input" "$SINK_NAME" 2>/dev/null && echo "  routed input $input" || true
+for input in $(PULSE_SERVER=unix:/var/run/pulse/native pactl list sink-inputs short 2>/dev/null | cut -f1); do
+    PULSE_SERVER=unix:/var/run/pulse/native pactl move-sink-input "$input" "$SINK_NAME" 2>/dev/null && echo "  routed input $input" || true
 done
 
 # Start FFmpeg streaming to DLive
 echo "=== Starting FFmpeg stream to DLive ==="
-ffmpeg \
+PULSE_SERVER=unix:/var/run/pulse/native ffmpeg \
     -thread_queue_size 1024 \
     -f x11grab \
     -video_size $RESOLUTION \
