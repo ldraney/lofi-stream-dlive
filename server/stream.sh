@@ -26,7 +26,7 @@ echo "Resolution: $RESOLUTION @ ${FPS}fps"
 cleanup() {
     echo "Cleaning up..."
     pkill -f "Xvfb :$DISPLAY_NUM" 2>/dev/null || true
-    pkill -f "chromium.*lofi-stream-dlive" 2>/dev/null || true
+    pkill -f "firefox" 2>/dev/null || true
     pkill -f "ffmpeg.*dlive" 2>/dev/null || true
     pkill -f "pulseaudio" 2>/dev/null || true
 }
@@ -79,20 +79,18 @@ done
 echo "Available sinks:"
 PULSE_SERVER=unix:/var/run/pulse/native pactl list sinks short || echo "  (none listed)"
 
-# Start Chromium with system PulseAudio
-echo "=== Starting Chromium ==="
-PULSE_SERVER=unix:/var/run/pulse/native chromium-browser \
-    --no-sandbox \
-    --disable-gpu \
-    --disable-software-rasterizer \
-    --disable-dev-shm-usage \
-    --user-data-dir=/tmp/chromium-dlive \
+# Start Firefox with system PulseAudio
+echo "=== Starting Firefox ==="
+export PULSE_SERVER=unix:/var/run/pulse/native
+export MOZ_ENABLE_WAYLAND=0
+firefox \
+    --no-remote \
+    --new-instance \
     --kiosk \
-    --autoplay-policy=no-user-gesture-required \
-    --window-size=1280,720 \
-    --window-position=0,0 \
+    --width=1280 \
+    --height=720 \
     "$PAGE_URL" &
-CHROME_PID=$!
+BROWSER_PID=$!
 
 # Wait for page to load
 echo "Waiting for page to load..."
