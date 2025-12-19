@@ -48,8 +48,10 @@ mkdir -p $XDG_RUNTIME_DIR
 # Ensure PulseAudio is running
 pulseaudio --check || pulseaudio --start --exit-idle-time=-1
 
-# Create our own virtual audio sink
-pactl load-module module-null-sink sink_name=$SINK_NAME sink_properties=device.description=DLiveSpeaker 2>/dev/null || true
+# Create our own virtual audio sink if it doesn't exist
+if ! pactl list sinks short 2>/dev/null | grep -q "	$SINK_NAME	"; then
+    pactl load-module module-null-sink sink_name=$SINK_NAME sink_properties=device.description=DLiveSpeaker 2>/dev/null || true
+fi
 
 # Export PULSE_SERVER for ffmpeg
 export PULSE_SERVER=unix:$XDG_RUNTIME_DIR/pulse/native
@@ -82,18 +84,29 @@ sleep 1
 xdotool mousemove 640 360 click 1
 sleep 2
 
-# Move THIS Chromium's audio to our dlive sink (find by PID)
-sleep 1
-SINK_INPUT=$(pactl list sink-inputs | grep -B 20 "application.process.id = \"$CHROME_PID\"" | grep "Sink Input" | grep -oP '#\K\d+' | tail -1)
-if [ -n "$SINK_INPUT" ]; then
-    pactl move-sink-input $SINK_INPUT $SINK_NAME
-    echo "Moved Chromium (PID $CHROME_PID) to $SINK_NAME"
-else
-    echo "Warning: Could not find sink input for Chromium PID $CHROME_PID"
-    # Fallback: try to move most recent sink input
-    LATEST_INPUT=$(pactl list short sink-inputs | tail -1 | awk '{print $1}')
-    [ -n "$LATEST_INPUT" ] && pactl move-sink-input $LATEST_INPUT $SINK_NAME 2>/dev/null || true
-fi
+# Background audio routing monitor - keeps audio routed correctly
+# This runs in the background and fixes routing every few seconds
+audio_monitor() {
+    while true; do
+        SINK_INPUT=$(pactl list sink-inputs 2>/dev/null | grep -B 30 "window.x11.display = \":$DISPLAY_NUM\"" | grep "Sink Input" | grep -oP '#\K\d+' | tail -1 || true)
+        if [ -n "$SINK_INPUT" ]; then
+            CURRENT=$(pactl list sink-inputs 2>/dev/null | grep -A 5 "Sink Input #$SINK_INPUT" | grep "Sink:" | awk '{print $2}' || true)
+            EXPECTED=$(pactl list sinks short 2>/dev/null | grep "	$SINK_NAME	" | cut -f1 || true)
+            if [ -n "$EXPECTED" ] && [ "$CURRENT" != "$EXPECTED" ]; then
+                pactl move-sink-input $SINK_INPUT $SINK_NAME 2>/dev/null && echo "Audio rerouted to $SINK_NAME"
+            fi
+        fi
+        sleep 5
+    done
+}
+audio_monitor &
+AUDIO_MONITOR_PID=$!
+echo "Started audio monitor (PID $AUDIO_MONITOR_PID)"
+
+# Initial routing attempt
+sleep 3
+SINK_INPUT=$(pactl list sink-inputs 2>/dev/null | grep -B 30 "window.x11.display = \":$DISPLAY_NUM\"" | grep "Sink Input" | grep -oP '#\K\d+' | tail -1 || true)
+[ -n "$SINK_INPUT" ] && pactl move-sink-input $SINK_INPUT $SINK_NAME 2>/dev/null && echo "Initial route: sink-input $SINK_INPUT → $SINK_NAME"
 
 # Start FFmpeg streaming to DLive
 echo "Starting FFmpeg stream to DLive..."
