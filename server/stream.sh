@@ -59,6 +59,11 @@ PACONF
 pulseaudio --system --disallow-exit --disallow-module-loading=0 &
 sleep 3
 
+# Create symlink for snap apps (they look for user-mode socket)
+mkdir -p /run/user/0/pulse
+ln -sf /var/run/pulse/native /run/user/0/pulse/native
+chmod 777 /run/user/0/pulse
+
 # Verify PulseAudio is running
 echo "Checking PulseAudio..."
 for i in {1..10}; do
